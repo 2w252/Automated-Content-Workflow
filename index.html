@@ -368,46 +368,6 @@
       consoleLogs.scrollTop = consoleLogs.scrollHeight;
     }
 
-    const fallbackNews = [
-      {
-        title: "ИИ-агенты выходят на новый уровень: как AI Co-Creation меняет веб-разработку",
-        desc: "Исследования показывают, что совместная разработка с помощью искусственного интеллекта увеличивает скорость прототипирования на 300%. Программисты переходят от написания кода к роли Prompt-дизайнеров.",
-        link: "https://habr.com/ru/articles/723456/"
-      },
-      {
-        title: "FastAPI стал самым популярным бэкенд-фреймворком на Python в 2026 году",
-        desc: "Благодаря асинхронности из коробки и автоматической Swagger-документации, FastAPI практически вытеснил Flask в продакшн микросервисах.",
-        link: "https://habr.com/ru/articles/789012/"
-      },
-      {
-        title: "Развертывание статических сайтов на Surge за 10 секунд: подробное руководство",
-        desc: "Разбираем, как одной консольной командой опубликовать React-приложение или HTML5-проект на бесплатный облачный хостинг с поддержкой SSL.",
-        link: "https://habr.com/ru/articles/345678/"
-      }
-    ];
-
-    function loadFallbackNews() {
-      loadedNews = fallbackNews;
-      newsListDiv.innerHTML = '';
-      loadedNews.forEach((item, index) => {
-        const card = document.createElement('div');
-        card.className = 'news-card';
-        card.innerHTML = `
-          <h3>${item.title}</h3>
-          <p>${item.desc}</p>
-        `;
-        card.addEventListener('click', () => {
-          document.querySelectorAll('.news-card').forEach(c => c.classList.remove('active'));
-          card.classList.add('active');
-          selectedNewsItem = loadedNews[index];
-          generateBtn.disabled = false;
-          logConsole(`[ВЫБОР] Выбрана локальная статья: "${item.title}"`);
-        });
-        newsListDiv.appendChild(card);
-      });
-      logConsole('[RSS] Загружен локальный список из 3 тестовых новостей.');
-    }
-
     // Fetch RSS via CORS Proxy
     fetchNewsBtn.addEventListener('click', async () => {
       const rssUrl = rssUrlInput.value;
@@ -421,16 +381,45 @@
 
       try {
         let xmlText = '';
+        let success = false;
+
+        // Try 1: corsproxy.io (Fixed parameter: ?url=)
         try {
-          const response = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(rssUrl)}`);
-          if (!response.ok) throw new Error('allorigins failed');
-          const data = await response.json();
-          xmlText = data.contents;
-        } catch (e) {
-          logConsole('[RSS] Первый прокси недоступен. Пробуем резервный (corsproxy.io)...');
-          const response = await fetch(`https://corsproxy.io/?${encodeURIComponent(rssUrl)}`);
+          logConsole('[RSS] Пробуем прокси-сервер 1 (corsproxy.io)...');
+          const response = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(rssUrl)}`);
           if (!response.ok) throw new Error('corsproxy.io failed');
           xmlText = await response.text();
+          success = true;
+        } catch (e) {
+          logConsole(`[RSS] Прокси-сервер 1 недоступен (${e.message}). Пробуем прокси-сервер 2...`);
+        }
+
+        // Try 2: codetabs proxy
+        if (!success) {
+          try {
+            logConsole('[RSS] Пробуем прокси-сервер 2 (codetabs.com)...');
+            const response = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(rssUrl)}`);
+            if (!response.ok) throw new Error('codetabs failed');
+            xmlText = await response.text();
+            success = true;
+          } catch (e) {
+            logConsole(`[RSS] Прокси-сервер 2 недоступен (${e.message}). Пробуем прокси-сервер 3...`);
+          }
+        }
+
+        // Try 3: allorigins
+        if (!success) {
+          try {
+            logConsole('[RSS] Пробуем прокси-сервер 3 (allorigins.win)...');
+            const response = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(rssUrl)}`);
+            if (!response.ok) throw new Error('allorigins failed');
+            const data = await response.json();
+            xmlText = data.contents;
+            success = true;
+          } catch (e) {
+            logConsole(`[RSS] Прокси-сервер 3 недоступен (${e.message}).`);
+            throw new Error('Все прокси-сервера CORS вернули ошибку.');
+          }
         }
 
         const parser = new DOMParser();
@@ -441,7 +430,7 @@
         newsListDiv.innerHTML = '';
 
         if (items.length === 0) {
-          throw new Error('Элементы item не найдены в XML');
+          throw new Error('В полученном XML отсутствуют элементы <item>.');
         }
 
         items.forEach((item, index) => {
@@ -474,8 +463,8 @@
         logConsole(`[RSS] Успешно загружено ${loadedNews.length} статей.`);
 
       } catch (err) {
-        logConsole(`[ВНИМАНИЕ] Не удалось прочитать ленту через прокси-сервера (${err.message}). Загружаем тестовые новости.`);
-        loadFallbackNews();
+        logConsole(`[ОШИБКА RSS] Не удалось прочитать ленту: ${err.message}`);
+        newsListDiv.innerHTML = `<div style="color: var(--neon-pink); font-size: 0.8rem; text-align: center; margin-top: 2rem; padding: 1rem; border: 1px dashed var(--neon-pink); border-radius: 6px;">Ошибка загрузки RSS.<br><br>Причина: ${err.message}<br><br>Проверьте блокировщики рекламы/Adblock (они могут блокировать CORS-прокси) или введите другой RSS URL.</div>`;
       }
     });
 
